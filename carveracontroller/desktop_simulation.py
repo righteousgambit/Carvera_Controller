@@ -364,10 +364,23 @@ class SimulationPanel(Surface):
             self.alignment_status.text = "Stock/path review worker could not start; change selection to review again."
 
     def review_simulation_tool(self, number):
+        from carveracontroller.desktop_simulation_tool_assignment import SimulationToolAssignment
+
+        previous = getattr(self.workspace, "simulation_tool_assignment", None)
+        if previous is not None:
+            previous.cancel("Replaced by a newer simulation cutter review.")
+        try:
+            context = SimulationToolAssignment(self, number)
+        except ValueError as exc:
+            self.note.text = str(exc)
+            return None
+        self.workspace.simulation_tool_assignment = context
         comparison = self.workspace.tool_comparison
         comparison.search.text = ""
-        comparison.focus()
-        comparison.choose(number)
+        with context.navigation():
+            comparison.focus()
+            comparison.choose(number)
+        return context
 
     def operation_selected(self, number):
         point = self.clearance_card.plot.selected

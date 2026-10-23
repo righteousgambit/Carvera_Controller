@@ -851,9 +851,8 @@ class ProfileLibrary(BoxLayout):
         issue = self._simulation_assignment_issue()
         self.apply_button.text = f"Use saved cutter\nfor preview T{context.number}"
         self.apply_button.disabled = issue is not None
-        self.draft_status.text = (
-            f"Preview T{context.number} · saved cutter number stays unchanged.\n"
-            + (issue or "Uses the saved geometry for this preview only.")
+        self.draft_status.text = f"Preview T{context.number} · saved cutter number stays unchanged.\n" + (
+            issue or "Uses the saved geometry for this preview only."
         )
 
     def revert(self):
@@ -1274,16 +1273,16 @@ class ProfileLibrary(BoxLayout):
             self.refresh_context_action()
             return accepted
         if not self.store:
-            return
+            return None
         if self.selected_id and self._raw_fields() == self._baseline:
             record = next((row for row in self.store.data[self.selected_kind] if row["id"] == self.selected_id), None)
             if record is None or record != self._baseline_record:
                 self.status.text = "Saved profile changed or was removed. Reload it before loading."
-                return
+                return None
         else:
             record = self.save()
             if record is None:
-                return
+                return None
         try:
             if self.selected_kind == "machines":
 
@@ -1297,9 +1296,9 @@ class ProfileLibrary(BoxLayout):
 
                 if not self.workspace.request_machine_profile(record, prepared):
                     self.status.text = "Workspace closed; profile saved but not loaded."
-                    return
+                    return None
                 self.status.text = f"Preparing {record['name']}… Current workspace retained."
-                return
+                return None
             kind = self.selected_kind
 
             def prepared(success, error):

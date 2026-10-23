@@ -947,7 +947,7 @@ def build_scene_controls(workspace):
                 import_component(kind)
                 return
             elif value == "Current model":
-                viewer.machine_component_profiles.pop(kind, None)
+                viewer.clear_machine_component(kind)
                 if viewer.machine_visible:
                     viewer._build_machine_scene()
                     viewer.restore_default_view()
@@ -1104,7 +1104,7 @@ def build_scene_controls(workspace):
             # Reset unsaved selections before switching profiles so another machine's
             # stock and visibility do not become this profile's initial setup.
             workspace.simulation_geometry = {}
-            viewer.machine_component_profiles.clear()
+            viewer.clear_machine_component()
             viewer.select_preview_tool(None)
             for kind, choice in choices.items():
                 choice.text = (

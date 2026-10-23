@@ -1,0 +1,353 @@
+"""Real embedded library round trips retain simulation ownership without writes."""
+
+import copy
+import threading
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+from kivy.config import Config
+from kivy.core.window import Window
+
+from carveracontroller import desktop_tool_profile_loading as loading
+from carveracontroller.desktop_view_state import capture_view
+from carveracontroller.machine.desktop_profiles import ProfileStore, to_tool_definition
+from tests.integration.conftest import pump_frames
+from tests.integration.test_completed_program_source import load, until
+
+SOURCE = "(operation: Finish)\nG21 G90 G54\nT3 M6\nG0 X1 Y2 Z20\nG1 X5 F100\n"
+
+
+@pytest.fixture
+def assignment(kivy_app, monkeypatch, tmp_path):
+    app, ws = kivy_app, kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    ws._cancel_simulation_assignment()
+    viewer.cancel_default_machine_profile()
+    monkeypatch.setattr(app, "state", "N/A")
+    monkeypatch.setattr(app, "playing", False)
+    monkeypatch.setattr(ws.machine.controller, "set_program_source", Mock())
+    monkeypatch.setattr(ws.machine.controller, "publish_prepared_program_source", Mock())
+    commands = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", commands)
+    path = tmp_path / "finish.nc"
+    path.write_text(SOURCE)
+    program = load(app, path)
+    viewer.configure_machine(stock_size_mm=(20, 20, 10), stock_model=None)
+    viewer.clear_machine_component()
+    store = ProfileStore(tmp_path / "profiles.json")
+
+    def saved(name, diameter):
+        return store.save_tool(
+            {
+                "name": name,
+                "number": 1,
+                "shape": "flat_end_mill",
+                "diameter": diameter,
+                "shank_diameter": 6,
+                "length": 40,
+                "flute_length": 12,
+                "stickout": 20,
+            }
+        )
+
+    first, chosen = saved("Current rougher", 6), saved("Saved finisher", 3)
+    viewer.load_tool_profiles({1: to_tool_definition(first)})
+    viewer.select_preview_tool(None)
+    monkeypatch.setattr(ws, "loaded_toolset", {"id": "bank", "name": "Saved bank", "slots": {"1": first["id"]}})
+    monkeypatch.setattr(ws, "loaded_tool_profiles", {}, raising=False)
+    monkeypatch.setattr(ws, "profile_store", store)
+    ws._open_profiles()
+    library = ws.profile_library
+    monkeypatch.setattr(library, "store", store)
+    library.select_kind("tools")
+    ws.select("Job")
+    ws.program_tasks.show("Simulation")
+    ws.simulation_panel.scope.text = "Selected operation"
+    ws.operation_panel.select(program.operations[0])
+    ws.program_tasks.show("Simulation")
+    pump_frames(4)
+    ws.program_tasks.scroll.scroll_y = 0.4
+    write = Mock()
+    monkeypatch.setattr(Config, "write", write)
+    fixture = SimpleNamespace(
+        app=app,
+        ws=ws,
+        viewer=viewer,
+        store=store,
+        first=first,
+        chosen=chosen,
+        library=library,
+        program=program,
+        path=path,
+        write=write,
+        commands=commands,
+    )
+    try:
+        yield fixture
+    finally:
+        ws._cancel_simulation_assignment()
+        if hasattr(ws, "tool_profile_loads"):
+            until(lambda: not ws.tool_profile_loads.active, "Cutter worker did not retire")
+        library.set_simulation_assignment(None)
+        viewer.select_preview_tool(None)
+        viewer.load_tool_profiles({})
+        ws.loaded_toolset = None
+        ws.loaded_tool_profiles = {}
+
+
+def open_assignment(fixture):
+    ws = fixture.ws
+    ws.select("Job")
+    ws.program_tasks.show("Simulation")
+    context = ws.simulation_panel.review_simulation_tool(3)
+    assert context is not None, ws.simulation_panel.note.text
+    assert ws.tool_comparison.selected == 3
+    ws.tool_comparison.open_library()
+    assert ws.active_section == "Profiles"
+    assert fixture.library.simulation_assignment is context
+    fixture.library._edit(fixture.chosen)
+    assert not fixture.library.apply_button.disabled
+    assert "T3" in fixture.library.apply_button.text
+    return context
+
+
+def wait(fixture):
+    until(lambda: not fixture.ws.tool_profile_loads.active, "Cutter preparation did not finish")
+
+
+@pytest.mark.parametrize("width", [780, 1600])
+def test_saved_t1_is_assigned_only_to_requested_t3_and_returns_same_review(assignment, monkeypatch, width):
+    f = assignment
+    previous_size = Window.size
+    try:
+        Window.size = (width, 960)
+        pump_frames(4)
+        f.ws.program_tasks.scroll.scroll_y = 0.4
+        original = f.viewer.library_tool_table_mm[1]
+        operation, line = f.ws.operation_panel.selected_operation, f.ws.operation_panel.selected_line
+        view = capture_view(f.viewer)
+        stored, preferences = f.store.path.read_bytes(), dict(Config.items("carvera"))
+        context = open_assignment(f)
+        calculate = Mock()
+        monkeypatch.setattr(f.ws.simulation_panel, "start", calculate)
+        f.library.apply_button.dispatch("on_release")
+        wait(f)
+        until(lambda: not context.active, "Review return did not settle")
+        assert f.ws.active_section == "Job" and f.ws.program_tasks.active == "Simulation"
+        assert f.ws.operation_panel.program is f.program
+        assert f.ws.operation_panel.selected_operation is operation and f.ws.operation_panel.selected_line == line
+        assert f.ws.simulation_panel.scope.text == "Selected operation"
+        assert f.ws.program_tasks.scroll.scroll_y == pytest.approx(0.4)
+        assert capture_view(f.viewer) == view
+        assert set(f.viewer.library_tool_table_mm) == {1, 3}
+        assert f.viewer.library_tool_table_mm[1] is original
+        assert f.viewer.library_tool_table_mm[3].diameter == 3
+        assert f.ws.loaded_toolset is None
+        assert f.ws.loaded_tool_profiles == {1: f.first, 3: f.chosen}
+        assert "custom tool selection" in f.ws.profile_status.text
+        from carveracontroller.desktop_job_packages import capture_recording_job
+
+        job = capture_recording_job(f.ws, include_camera=False)
+        assert job.toolsets == []
+        assert {item["number"] for item in job.tools} == {1, 3}
+        assert f.store.path.read_bytes() == stored and dict(Config.items("carvera")) == preferences
+        f.write.assert_not_called()
+        f.commands.assert_not_called()
+        calculate.assert_not_called()
+    finally:
+        Window.size = previous_size
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "editor_aba",
+        "selection_aba",
+        "saved_aba",
+        "delete",
+        "store_owner",
+        "page_aba",
+        "close_reopen",
+        "target_aba",
+        "scene_aba",
+        "tool_aba",
+        "same_path_reload",
+        "mesh_owner",
+        "settings_aba",
+        "task_aba",
+    ],
+)
+def test_late_geometry_never_publishes_over_changed_context(assignment, monkeypatch, change):
+    f = assignment
+    context = open_assignment(f)
+    entered, release = threading.Event(), threading.Event()
+    original_prepare = loading.prepare_tool_profiles
+
+    def blocked(*args):
+        entered.set()
+        assert release.wait(15)
+        return original_prepare(*args)
+
+    monkeypatch.setattr(loading, "prepare_tool_profiles", blocked)
+    before, meshes = f.viewer.library_tool_table_mm, f.viewer._tool_meshes
+    f.library.apply()
+    assert entered.wait(2)
+    try:
+        if change == "editor_aba":
+            field = f.library.fields["name"]
+            old = field.text
+            field.text = "Changed"
+            field.text = old
+        elif change == "selection_aba":
+            f.library._edit(f.first)
+            f.library._edit(f.chosen)
+        elif change == "saved_aba":
+            f.store.save_tool(dict(f.chosen, name="Changed"))
+            f.store.save_tool(f.chosen)
+        elif change == "delete":
+            f.store.delete("tools", f.chosen["id"])
+        elif change == "store_owner":
+            monkeypatch.setattr(f.library, "store", ProfileStore(f.store.path))
+        elif change == "page_aba":
+            f.ws.select("Position", record_navigation=False)
+            f.ws.select("Profiles", record_navigation=False)
+        elif change == "close_reopen":
+            f.ws.close_profile_library()
+            f.ws._open_profiles()
+        elif change == "target_aba":
+            f.ws.tool_comparison.choose(1)
+            f.ws.tool_comparison.choose(3)
+        elif change == "scene_aba":
+            old = f.viewer.workholding_offset_mm
+            f.viewer.workholding_offset_mm = (1, 2, 3)
+            f.viewer.workholding_offset_mm = old
+        elif change == "tool_aba":
+            f.viewer.select_preview_tool(1)
+            f.viewer.select_preview_tool(None)
+        elif change == "same_path_reload":
+            load(f.app, f.path)
+        elif change == "mesh_owner":
+            monkeypatch.setattr(f.viewer, "meshmanager", copy.copy(f.viewer.meshmanager))
+        elif change == "settings_aba":
+            f.ws.simulation_panel.resolution.text = "1"
+            f.ws.simulation_panel.resolution.text = "2"
+        elif change == "task_aba":
+            with context.navigation():
+                f.ws.select("Job")
+            f.ws.program_tasks.show("Operations")
+            f.ws.program_tasks.show("Simulation")
+            f.ws.select("Profiles")
+        expected_page = f.ws.active_section
+        latest_status = f.library.status.text
+    finally:
+        release.set()
+    wait(f)
+    assert set(f.viewer.library_tool_table_mm) == {1}
+    if change != "same_path_reload":
+        assert f.viewer.library_tool_table_mm is before and f.viewer._tool_meshes is meshes
+    assert f.ws.active_section == expected_page
+    if not context.active or context._request is None and change in ("editor_aba", "selection_aba"):
+        assert f.library.status.text == latest_status
+    f.write.assert_not_called()
+    f.commands.assert_not_called()
+
+
+def test_dirty_or_new_cutter_never_implicitly_saves_or_loads(assignment, monkeypatch):
+    f = assignment
+    open_assignment(f)
+    original = f.store.path.read_bytes()
+    request = Mock()
+    monkeypatch.setattr(f.ws, "_request_tool_profiles", request)
+    f.library.fields["name"].text = "Unsaved new name"
+    assert f.library.apply_button.disabled
+    f.library.apply()
+    assert f.store.path.read_bytes() == original
+    f.library.new()
+    assert f.library.apply_button.disabled
+    f.library.apply()
+    request.assert_not_called()
+    assert f.store.path.read_bytes() == original
+
+
+@pytest.mark.parametrize("failure", ["preparation", "start", "publish", "restore"])
+def test_failures_retain_prior_preview_and_allow_only_explicit_retry(assignment, monkeypatch, failure):
+    f = assignment
+    context = open_assignment(f)
+    before = f.viewer.capture_tool_display()
+    bank = copy.deepcopy(f.ws.loaded_toolset)
+    real_publish, real_restore = f.viewer.publish_tool_profiles, f.viewer.restore_tool_display
+
+    def broken_publish(prepared):
+        real_publish(prepared)
+        raise RuntimeError("injected publication failure")
+
+    with monkeypatch.context() as patch:
+        if failure == "preparation":
+            patch.setattr(loading, "prepare_tool_profiles", Mock(side_effect=RuntimeError("injected preparation")))
+        elif failure == "start":
+            patch.setattr(loading.threading.Thread, "start", Mock(side_effect=RuntimeError("injected startup")))
+        else:
+            patch.setattr(f.viewer, "publish_tool_profiles", broken_publish)
+            if failure == "restore":
+
+                def incomplete(snapshot):
+                    real_restore(snapshot)
+                    raise RuntimeError("injected redraw incomplete")
+
+                patch.setattr(f.viewer, "restore_tool_display", incomplete)
+        f.library.apply()
+        wait(f)
+        assert not context.pending
+        assert f.ws.active_section == "Profiles"
+        assert "assignment failed" in f.library.status.text
+        assert f.viewer.library_tool_table_mm is before["library"]
+        assert f.viewer._tool_meshes is before["meshes"]
+        assert f.ws.loaded_toolset == bank and f.ws.loaded_tool_profiles == {}
+        if failure == "restore":
+            assert "restoration incomplete" in f.library.status.text
+    if failure != "restore":
+        f.library.apply()
+        wait(f)
+        assert set(f.viewer.library_tool_table_mm) == {1, 3}
+    f.write.assert_not_called()
+    f.commands.assert_not_called()
+
+
+def test_pending_new_preview_cannot_create_assignment_even_before_loading_flag(assignment, monkeypatch):
+    f = assignment
+    monkeypatch.setattr(f.ws.machine, "program_preview_generation", f.ws.machine.program_preview_generation + 1)
+    assert not f.ws.machine.loading_file
+    assert f.ws.simulation_panel.review_simulation_tool(3) is None
+    assert "complete local" in f.ws.simulation_panel.note.text
+
+
+@pytest.mark.parametrize("intent", ["scroll_aba", "page_aba", "task_aba"])
+def test_postcommit_scroll_return_yields_to_later_intent(assignment, monkeypatch, intent):
+    f = assignment
+    context = open_assignment(f)
+    original_return = context._return_to_review
+
+    def return_then_user_intent():
+        original_return()
+        if intent == "scroll_aba":
+            old = f.ws.program_tasks.scroll.scroll_y
+            f.ws.program_tasks.scroll.scroll_y = 0.65
+            f.ws.program_tasks.scroll.scroll_y = old
+        elif intent == "page_aba":
+            f.ws.select("Position", record_navigation=False)
+            f.ws.select("Job", record_navigation=False)
+        else:
+            f.ws.program_tasks.show("Operations")
+            f.ws.program_tasks.show("Simulation")
+
+    monkeypatch.setattr(context, "_return_to_review", return_then_user_intent)
+    f.library.apply()
+    wait(f)
+    final_scroll = f.ws.program_tasks.scroll.scroll_y
+    pump_frames(4)
+    assert set(f.viewer.library_tool_table_mm) == {1, 3}
+    assert not context.active and context._scroll_binding is None and context._return_event is None
+    assert f.ws.program_tasks.scroll.scroll_y == final_scroll
+    assert f.ws.program_tasks.scroll.scroll_y != 0.4
+    assert "custom tool selection" in f.ws.profile_status.text

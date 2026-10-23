@@ -428,6 +428,8 @@ class OperationPanel(Surface):
         self.inspect_line(operation.start_line, seek=True, reveal=self.operation_card)
 
     def _select_details(self, operation):
+        if operation is not self.selected_operation:
+            self.workspace._cancel_simulation_assignment()
         self.selected_operation = operation
         self.refresh_path_highlight()
         self.items.select(operation)
@@ -536,6 +538,8 @@ class OperationPanel(Surface):
             self.reset_move_card(self.explanation.text)
 
     def inspect_line(self, number, seek=False, *, reveal=None):
+        if number != self.selected_line:
+            self.workspace._cancel_simulation_assignment()
         if self.inspector is None:
             return
         move = self.inspector.explain(number)

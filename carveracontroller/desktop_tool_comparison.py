@@ -111,6 +111,10 @@ class ToolComparisonPanel(Surface):
         open_cutting_parameters(self)
 
     def open_library(self):
+        context = getattr(self.workspace, "simulation_tool_assignment", None)
+        if context is not None and context.active and context.number == self.selected:
+            context.open_library()
+            return
         self.workspace._open_profiles()
         self.workspace.profile_library.select_kind("tools")
 
@@ -152,6 +156,9 @@ class ToolComparisonPanel(Surface):
         self.custody.refresh()
 
     def choose(self, number):
+        context = getattr(self.workspace, "simulation_tool_assignment", None)
+        if context is not None and number != context.number:
+            context.cancel("Tool selection changed. Review the simulation cutter again to assign its preview.")
         self.selected = number
         self.render()
         self.custody.refresh(force=True)
