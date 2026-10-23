@@ -63,6 +63,27 @@ def test_real_helper_lists_resolved_locations_and_checks_without_mutation(tmp_pa
         filesystem_request({"operation": "check", "path": str(tmp_path / "missing.json"), "save": False})
 
 
+@pytest.mark.skipif(not hasattr(subprocess, "_PopenSelector"), reason="POSIX selector scheduling regression")
+def test_request_survives_delayed_first_stdin_write(tmp_path, monkeypatch):
+    """A delayed ready selector must not strand an unsent request in stdin."""
+    original = subprocess._PopenSelector
+    delayed = []
+
+    class DelayedFirstWrite(original):
+        def select(self, timeout=None):
+            ready = super().select(timeout)
+            if not delayed and any(key.events & 2 for key, _events in ready):
+                delayed.append(time.monotonic())
+                # The old 50 ms communicate slice expires after readiness but
+                # before its first write. The real helper is waiting on stdin.
+                time.sleep(0.075)
+            return ready
+
+    monkeypatch.setattr(subprocess, "_PopenSelector", DelayedFirstWrite)
+    result = filesystem_request({"operation": "check", "path": str(tmp_path / "new.json"), "save": True})
+    assert delayed and result == {}
+
+
 def test_helper_timeout_and_cancel_terminate_the_same_child(tmp_path, monkeypatch):
     original = subprocess.Popen
     children = []
