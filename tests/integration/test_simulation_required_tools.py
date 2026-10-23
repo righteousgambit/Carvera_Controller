@@ -11,7 +11,7 @@ from carveracontroller.addons.machine_simulation.model import MachineSetup
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 from carveracontroller.desktop_view_state import capture_view
 from carveracontroller.machine.program_operations import ProgramOperations
-from tests.integration.conftest import pump_frames, set_window_viewport
+from tests.integration.conftest import pump_frames, set_window_logical_size, set_window_viewport
 from tests.integration.test_completed_program_source import until
 from tests.integration.test_simulation_cutter_assignment import assignment as _assignment
 from tests.integration.test_simulation_cutter_assignment import wait
@@ -148,7 +148,7 @@ def test_required_tool_rows_wrap_without_clipping_long_names(kivy_app, monkeypat
     previous_size = (Window.width, Window.height)
     expanded = panel.details_open
     try:
-        set_window_viewport(width, 960)
+        set_window_logical_size(width, 960)
         ws.select("Job")
         ws.program_tasks.show("Simulation")
         if not panel.details_open:
@@ -171,14 +171,13 @@ def test_required_tool_rows_wrap_without_clipping_long_names(kivy_app, monkeypat
         pump_frames(3)
 
 
-def test_ready_review_button_reopens_real_assignment_and_returns_updated_cutter(assignment, monkeypatch):
+def test_ready_review_button_reopens_real_assignment_and_returns_updated_cutter(assignment, monkeypatch, tmp_path):
     f = assignment
     panel = f.ws.simulation_panel
     expanded = panel.details_open
     if not panel.details_open:
         panel.toggle_details()
     pump_frames(4)
-    f.ws.program_tasks.scroll.scroll_y = 0.4
     original, operation, line = (
         f.viewer.library_tool_table_mm[1],
         f.ws.operation_panel.selected_operation,
@@ -193,8 +192,17 @@ def test_ready_review_button_reopens_real_assignment_and_returns_updated_cutter(
             panel.refresh_controls()
             assert set(rows(panel)) == {3}
             assert panel.details_open and panel.content.parent is panel
-            assert rows(panel)[3].parent is panel.tool_remedies
-            rows(panel)[3].dispatch("on_release")
+            action = rows(panel)[3]
+            assert action.parent is panel.tool_remedies
+            scroll = f.ws.program_tasks.scroll
+            scroll.scroll_to(action, padding=dp(8), animate=False)
+            pump_frames(4)
+            origin_scroll = scroll.scroll_y
+            action_low, action_high = action.to_window(0, action.y)[1], action.to_window(0, action.top)[1]
+            scroll_low, scroll_high = scroll.to_window(0, scroll.y)[1], scroll.to_window(0, scroll.top)[1]
+            assert scroll_low <= action_low < action_high <= scroll_high
+            f.app.root.export_to_png(str(tmp_path / f"simulation-review-before-{profile['diameter']}.png"))
+            action.dispatch("on_release")
             context = f.ws.simulation_tool_assignment
             assert context is not None and context.active and context.number == 3
             assert f.ws.tool_comparison.library_action.text == "Choose cutter for T3"
@@ -207,13 +215,14 @@ def test_ready_review_button_reopens_real_assignment_and_returns_updated_cutter(
             assert f.ws.active_section == "Job" and f.ws.program_tasks.active == "Simulation"
             assert f.ws.operation_panel.selected_operation is operation and f.ws.operation_panel.selected_line == line
             assert panel.details_open and panel.content.parent is panel
-            assert panel.scope.text == scope and f.ws.program_tasks.scroll.scroll_y == pytest.approx(0.4)
+            assert panel.scope.text == scope and scroll.scroll_y == pytest.approx(origin_scroll)
             assert capture_view(f.viewer) == view
             assert f.viewer.library_tool_table_mm[1] == original
             assert f.viewer.library_tool_table_mm[3].diameter == profile["diameter"]
             assert profile["name"] in rows(panel)[3].text
             assert "Cutting dimensions ready" in rows(panel)[3].text
             assert panel._tool_issues == () and not panel.simulate_action.disabled
+            f.app.root.export_to_png(str(tmp_path / f"simulation-review-after-{profile['diameter']}.png"))
         assert f.store.path.read_bytes() == stored and dict(Config.items("carvera")) == preferences
         assert f.chosen["number"] == f.first["number"] == 1
         assert f.app.playing is False
