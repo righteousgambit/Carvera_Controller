@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from math import isfinite
 from pathlib import Path
 
@@ -42,7 +43,46 @@ from carveracontroller.machine.artifact_fs_worker import (
 
 MACOS_WORKER_DIRECTORY = "carvera-artifact-worker"
 _slots = threading.BoundedSemaphore(2)
-_retired: list[subprocess.Popen[bytes]] = []
+
+
+@dataclass
+class _HelperExchange:
+    process: subprocess.Popen[bytes]
+    thread: threading.Thread | None = None
+    finished: threading.Event = field(default_factory=threading.Event)
+    output: bytes | None = None
+    error: BaseException | None = None
+
+    def retired(self) -> bool:
+        return self.process.poll() is not None and (self.thread is None or not self.thread.is_alive())
+
+    def close_pipes(self) -> None:
+        for pipe in (self.process.stdin, self.process.stdout):
+            if pipe is not None:
+                try:
+                    pipe.close()
+                except Exception as error:
+                    if self.error is None:
+                        self.error = error
+
+    def communicate(self, payload: bytes, deadline: float) -> None:
+        try:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired("filesystem helper", 0)
+            # One call owns stdin through EOF. Retrying communicate(None) after
+            # a short timeout can strand input not yet written by CPython.
+            self.output, _ = self.process.communicate(input=payload, timeout=remaining)
+        except BaseException as error:
+            self.error = error
+        finally:
+            # Only this worker closes buffered pipes after it starts. Closing
+            # from the owner could wait on its blocked read/write buffer lock.
+            self.close_pipes()
+            self.finished.set()
+
+
+_retired: list[_HelperExchange] = []
 _retired_lock = threading.Lock()
 
 
@@ -269,9 +309,9 @@ def _acquire_slot(deadline: float, cancelled: Callable[[], bool]) -> None:
         if cancelled():
             raise ValueError("Filesystem request cancelled")
         with _retired_lock:
-            for process in list(_retired):
-                if process.poll() is not None:
-                    _retired.remove(process)
+            for exchange in list(_retired):
+                if exchange.retired():
+                    _retired.remove(exchange)
                     _slots.release()
             retiring = bool(_retired)
         if _slots.acquire(blocking=False):
@@ -305,7 +345,6 @@ def filesystem_request(
     encoded += b"\n"
     if cancelled():
         raise ValueError("Filesystem request cancelled")
-    payload: bytes | None = encoded
     deadline = time.monotonic() + timeout
     _acquire_slot(deadline, cancelled)
     try:
@@ -315,20 +354,37 @@ def filesystem_request(
     except Exception:
         _slots.release()
         raise
+    exchange = _HelperExchange(process)
+
+    def timed_out() -> ValueError:
+        if request["operation"] == "program-read":
+            return ValueError("Program read timed out. Retry or select another program.")
+        return ValueError("Folder check timed out. Retry or choose another location.")
+
     try:
+        if deadline - time.monotonic() <= 0:
+            raise timed_out()
+        exchange.thread = threading.Thread(
+            target=exchange.communicate, args=(encoded, deadline), name="artifact-fs-communicate", daemon=True
+        )
+        exchange.thread.start()
         while True:
             if cancelled():
                 raise ValueError("Filesystem request cancelled")
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                if request["operation"] == "program-read":
-                    raise ValueError("Program read timed out. Retry or select another program.")
-                raise ValueError("Folder check timed out. Retry or choose another location.")
-            try:
-                output, _ = process.communicate(input=payload, timeout=min(remaining, 0.05))
+                raise timed_out()
+            if exchange.finished.wait(min(remaining, 0.05)):
                 break
-            except subprocess.TimeoutExpired:
-                payload = None
+        if cancelled():
+            raise ValueError("Filesystem request cancelled")
+        if time.monotonic() >= deadline or isinstance(exchange.error, subprocess.TimeoutExpired):
+            raise timed_out()
+        if exchange.error is not None:
+            raise exchange.error
+        output = exchange.output
+        if output is None:
+            raise _invalid_response()
         if process.returncode:
             raise ValueError("Filesystem helper exited before completing the request")
         if len(output) > MAX_RESPONSE:
@@ -342,18 +398,26 @@ def filesystem_request(
         return validate_response(decoded, request)
     finally:
         if process.poll() is None:
-            process.kill()
-        # A kernel-blocked helper can delay reaping. Never wait indefinitely.
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+        # One cleanup budget bounds both reap and communicator retirement.
+        # A child or pipe blocked in the kernel keeps its slot until both exit.
+        cleanup_deadline = time.monotonic() + 0.2
         try:
             process.wait(timeout=0.2)
         except subprocess.TimeoutExpired:
+            pass
+        if exchange.thread is None or exchange.thread.ident is None:
+            exchange.close_pipes()
+        else:
+            exchange.thread.join(timeout=max(0, cleanup_deadline - time.monotonic()))
+        if not exchange.retired():
             with _retired_lock:
-                _retired.append(process)
+                _retired.append(exchange)
         else:
             _slots.release()
-        for pipe in (process.stdin, process.stdout):
-            if pipe is not None:
-                pipe.close()
 
 
 def read_program_bytes(
