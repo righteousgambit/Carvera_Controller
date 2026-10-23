@@ -93,8 +93,10 @@ def non_snapshot(requests):
 
 
 def test_actual_compact_row_buttons_reveal_production_panes_without_dispatch(
-    completed_bank_preview, monkeypatch, tmp_path
-):  # noqa: F811
+    completed_bank_preview,  # noqa: F811
+    monkeypatch,
+    tmp_path,
+):
     ws = completed_bank_preview.workspace
     prior_section, prior_task = ws.active_section, ws.setup_tasks.active
     program = completed_bank_preview.program
